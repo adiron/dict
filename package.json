@@ -1,0 +1,36 @@
+{
+  "name": "dict",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.server.json",
+    "dev:server": "tsx watch server/index.ts",
+    "data:make": ".venv/bin/python3 scripts/extract.py",
+    "test:extract": ".venv/bin/pytest scripts/test_extract.py -v",
+    "test:server": "vitest run server/app.test.ts",
+    "types:gen": "kysely-codegen"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.12.0",
+    "kysely": "^0.28.12",
+    "kysely-codegen": "^0.20.0",
+    "svelte": "^5.53.7",
+    "svelte-check": "^4.4.5",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.11",
+    "better-sqlite3": "^12.8.0",
+    "hono": "^4.12.8",
+    "tsx": "^4.21.0"
+  }
+}
