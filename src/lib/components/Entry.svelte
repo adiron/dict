@@ -136,6 +136,7 @@
       display: flex;
       flex: 1;
       align-items: baseline;
+      flex-wrap: wrap;
       gap: 8px;
       min-width: 0;
     }
@@ -143,10 +144,11 @@
     .headword-group {
       display: flex;
       align-items: baseline;
+      flex-wrap: wrap;
       gap: 4px;
       font-size: var(--textmd);
       font-weight: 500;
-      flex-shrink: 0;
+      min-width: 0;
       transition: font-size 0.3s ease, gap 0.3s ease;
     }
 
@@ -159,6 +161,7 @@
 
     .headword {
       color: var(--fg);
+      hyphens: auto;
       transition: font-weight 0.1s ease;
     }
 
@@ -227,7 +230,7 @@
 
     .inflections {
       color: var(--textlight);
-      font-size: var(--textmd);
+      font-size: var(--text-sm);
       margin: 0;
     }
 
