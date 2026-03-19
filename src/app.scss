@@ -1,0 +1,76 @@
+// ─── Base styles ───────────────────────────────────────────────────────────
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 112.5%; // 18px base (112.5% of the browser default 16px)
+  scrollbar-gutter: stable;
+}
+
+// ─── Design tokens ─────────────────────────────────────────────────────────
+
+:root {
+  color-scheme: light;
+
+  // Layout
+  --maxWidth:    670px;
+  --padding:     1rem;
+  --itempadding: 2rem;
+
+  // Type scale
+  --text-xs: 0.64rem;
+  --text-sm: 0.8rem;
+  --textmd:  1rem;
+  --textxl:  1.333rem;
+
+  // Base hues - change these to retheme
+  --base-gray: oklch(50% 0.008 250);
+  --base-blue: oklch(54% 0.18 240);
+  --base-red:  oklch(54% 0.22 25);
+
+  // Semantic tokens - derived from bases via relative color syntax
+  --bg:        oklch(from var(--base-gray) 97% 0.003 h);
+  --border:    oklch(from var(--base-gray) 87% c h);
+  --fg:        oklch(from var(--base-gray) 18% c h);
+  --textlight: oklch(from var(--base-gray) 52% c h);
+  --hover:     oklch(from var(--base-gray) 94% 0.004 h);
+  --het:       oklch(from var(--base-blue) 72% 0.11 h);
+  --de:        oklch(from var(--base-red) 68% 0.14 h);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --base-gray: oklch(50% 0.004 250);
+    --base-blue: oklch(54% 0.13 240);
+    --base-red:  oklch(54% 0.15 25);
+
+    --bg:        oklch(from var(--base-gray) 22% c h);
+    --border:    oklch(from var(--base-gray) 38% c h);
+    --fg:        oklch(from var(--base-gray) 93% c h);
+    --textlight: oklch(from var(--base-gray) 52% c h);
+    --hover:     oklch(from var(--base-gray) 28% 0.004 h);
+    --het:       oklch(from var(--base-blue) 65% 0.10 h);
+    --de:        oklch(from var(--base-red) 65% 0.12 h);
+  }
+}
+
+// ─── Global element styles ─────────────────────────────────────────────────
+
+body {
+  margin: 0;
+  padding: var(--padding);
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+main {
+  max-width: var(--maxWidth);
+  margin: 0 auto;
+}

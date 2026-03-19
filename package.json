@@ -4,14 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.server.json",
-    "dev:server": "tsx watch server/index.ts",
-    "data:make": ".venv/bin/python3 scripts/extract.py",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run src/lib/server/queries.test.ts",
     "test:extract": ".venv/bin/pytest scripts/test_extract.py -v",
-    "test:server": "vitest run server/app.test.ts",
+    "data:make": ".venv/bin/python3 scripts/extract.py",
     "types:gen": "kysely-codegen"
   },
   "devDependencies": {
@@ -21,6 +20,7 @@
     "@types/node": "^24.12.0",
     "kysely": "^0.28.12",
     "kysely-codegen": "^0.20.0",
+    "sass": "^1.98.0",
     "svelte": "^5.53.7",
     "svelte-check": "^4.4.5",
     "typescript": "~5.9.3",
@@ -28,9 +28,8 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.11",
-    "better-sqlite3": "^12.8.0",
-    "hono": "^4.12.8",
-    "tsx": "^4.21.0"
+    "@sveltejs/adapter-node": "^5.5.4",
+    "@sveltejs/kit": "^2.55.0",
+    "better-sqlite3": "^12.8.0"
   }
 }

@@ -1,7 +1,7 @@
 /**
  * API response types shared between server and frontend.
- * These are the shapes returned by the Hono endpoints - not raw DB rows.
- * Note: inflections is string[] here (parsed from the JSON string in the DB).
+ * These are the shapes returned by the API endpoints.
+ * Note: inflections is string[] here (fetched from the inflections table).
  */
 
 export interface SearchResult {
@@ -23,7 +23,7 @@ export interface PhraseResult {
 }
 
 export interface SearchResponse {
-  entries: SearchResult[];
+  entries: Entry[];
   phrases: PhraseResult[];
 }
 
