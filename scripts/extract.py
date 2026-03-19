@@ -155,6 +155,19 @@ def parse_inflections(soup: BeautifulSoup) -> list[str]:
     return [tag["value"] for tag in soup.find_all("idx:iform") if tag.get("value")]
 
 
+def strip_pos_label(soup: BeautifulSoup, pos: str | None) -> None:
+    """Remove the POS <i> tag from the body - it is already stored separately."""
+    if not pos:
+        return
+    for i_tag in soup.find_all("i"):
+        if i_tag.get_text(strip=True) == pos:
+            parent = i_tag.parent
+            i_tag.decompose()
+            if parent and isinstance(parent, Tag) and parent.name == "span" and not parent.get_text(strip=True):
+                parent.decompose()
+            return
+
+
 def parse_body_html(soup: BeautifulSoup) -> str:
     """
     Return the inner HTML of the definition section - the last top-level <div>
@@ -259,6 +272,7 @@ def parse_entry(raw_html: str) -> dict | None:
     pos = parse_pos(soup)
     phrases = parse_phrases(soup)
     strip_phrases(soup)
+    strip_pos_label(soup, pos)
     body_html = parse_body_html(soup)
 
     return {
