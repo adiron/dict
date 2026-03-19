@@ -7,12 +7,17 @@ A local Dutch - English dictionary reader, backed by a `.mobi` dictionary file.
 Source a `.mobi` dictionary file, then:
 
 ```bash
-# Python extractor (one-time)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-npm run data:make -- path/to/dictionary.mobi
+# 1. Create and activate the Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# App
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Extract the dictionary (one-time, produces data/dictionary.sqlite)
+python3 scripts/extract.py path/to/dictionary.mobi
+
+# 4. Install Node dependencies and start the app
 npm install
 npm run dev
 ```
@@ -23,7 +28,8 @@ The database only needs to be regenerated if you change the source file or the e
 
 | Command | What it does |
 |---|---|
-| `npm run data:make -- <file.mobi>` | Extract MOBI into `data/dictionary.sqlite` |
+| `python3 scripts/extract.py <file.mobi>` | Extract MOBI into `data/dictionary.sqlite` |
+| `python3 scripts/extract.py <file.mobi> --keep-html` | Same, but skip body HTML cleanup |
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
 | `npm run check` | Type check |

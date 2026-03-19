@@ -9,6 +9,7 @@ Schema:
 Run: python3 scripts/extract.py path/to/dictionary.mobi
 """
 
+import argparse
 import re
 import sqlite3
 import sys
@@ -17,6 +18,7 @@ from pathlib import Path
 import mobi
 from bs4 import BeautifulSoup, Tag
 from loguru import logger
+from tqdm import tqdm
 
 ROOT = Path(__file__).parent.parent
 DB_FILE = ROOT / "data" / "dictionary.sqlite"
@@ -106,12 +108,14 @@ def extract_book_html(mobi_path: Path) -> Path:
     return book
 
 
-def iter_raw_entries(book_html: Path):
-    """Yield raw HTML strings for each <idx:entry> block."""
-    pattern = re.compile(r"<idx:entry[^>]*>.*?</idx:entry>", re.DOTALL)
+def read_book_html(book_html: Path) -> str:
     logger.info("Reading book.html ({:.1f} MB)...", book_html.stat().st_size / 1e6)
-    text = book_html.read_text(encoding="utf-8", errors="replace")
-    logger.info("Scanning for entries...")
+    return book_html.read_text(encoding="utf-8", errors="replace")
+
+
+def iter_raw_entries(text: str):
+    """Yield regex matches for each <idx:entry> block."""
+    pattern = re.compile(r"<idx:entry[^>]*>.*?</idx:entry>", re.DOTALL)
     yield from pattern.finditer(text)
 
 
@@ -156,16 +160,25 @@ def parse_inflections(soup: BeautifulSoup) -> list[str]:
 
 
 def strip_pos_label(soup: BeautifulSoup, pos: str | None) -> None:
-    """Remove the POS <i> tag from the body - it is already stored separately."""
+    """Remove the POS <i> tag and any ancestors that become empty."""
     if not pos:
         return
     for i_tag in soup.find_all("i"):
         if i_tag.get_text(strip=True) == pos:
-            parent = i_tag.parent
-            i_tag.decompose()
-            if parent and isinstance(parent, Tag) and parent.name == "span" and not parent.get_text(strip=True):
-                parent.decompose()
+            node: Tag = i_tag
+            while True:
+                parent = node.parent
+                node.decompose()
+                if not (parent and isinstance(parent, Tag) and not parent.get_text(strip=True)):
+                    break
+                node = parent
             return
+
+
+def strip_presentation_attrs(soup: BeautifulSoup) -> None:
+    """Remove presentational HTML attributes (align, etc.) from all tags."""
+    for tag in soup.find_all(True):
+        tag.attrs.pop("align", None)
 
 
 def parse_body_html(soup: BeautifulSoup) -> str:
@@ -256,7 +269,7 @@ def strip_phrases(soup: BeautifulSoup) -> None:
                 parent.decompose()
 
 
-def parse_entry(raw_html: str) -> dict | None:
+def parse_entry(raw_html: str, keep_html: bool = False) -> dict | None:
     soup = BeautifulSoup(raw_html, "lxml")
 
     orth = soup.find("idx:orth")
@@ -272,7 +285,9 @@ def parse_entry(raw_html: str) -> dict | None:
     pos = parse_pos(soup)
     phrases = parse_phrases(soup)
     strip_phrases(soup)
-    strip_pos_label(soup, pos)
+    if not keep_html:
+        strip_pos_label(soup, pos)
+        strip_presentation_attrs(soup)
     body_html = parse_body_html(soup)
 
     return {
@@ -287,10 +302,14 @@ def parse_entry(raw_html: str) -> dict | None:
     }
 
 
-def build_db(book_html: Path, db_path: Path) -> None:
+def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
         db_path.unlink()
+
+    text = read_book_html(book_html)
+    entry_count = text.count("<idx:entry")
+    logger.info("Found ~{} entries", entry_count)
 
     con = sqlite3.connect(db_path)
     con.executescript(DDL)
@@ -344,8 +363,8 @@ def build_db(book_html: Path, db_path: Path) -> None:
         if total % 10000 == 0:
             logger.info("Inserted {} entries, {} inflections, {} phrases...", total, inflection_total, phrase_total)
 
-    for match in iter_raw_entries(book_html):
-        entry = parse_entry(match.group())
+    for match in tqdm(iter_raw_entries(text), total=entry_count, unit="entries", desc="Parsing"):
+        entry = parse_entry(match.group(), keep_html=keep_html)
         if entry is None:
             continue
 
@@ -376,17 +395,17 @@ def build_db(book_html: Path, db_path: Path) -> None:
 
 
 def main():
-    if len(sys.argv) < 2:
-        logger.error("Usage: python3 scripts/extract.py path/to/dictionary.mobi")
+    parser = argparse.ArgumentParser(description="Extract a dictionary .mobi into dictionary.sqlite")
+    parser.add_argument("mobi", type=Path, help="Path to the .mobi dictionary file")
+    parser.add_argument("--keep-html", action="store_true", help="Skip HTML cleanup (keep POS label in body)")
+    args = parser.parse_args()
+
+    if not args.mobi.exists():
+        logger.error("MOBI file not found: {}", args.mobi)
         sys.exit(1)
 
-    mobi_file = Path(sys.argv[1])
-    if not mobi_file.exists():
-        logger.error("MOBI file not found: {}", mobi_file)
-        sys.exit(1)
-
-    book_html = extract_book_html(mobi_file)
-    build_db(book_html, DB_FILE)
+    book_html = extract_book_html(args.mobi)
+    build_db(book_html, DB_FILE, keep_html=args.keep_html)
 
 
 if __name__ == "__main__":
