@@ -6,11 +6,13 @@
     entry,
     open = false,
     scroll = true,
+    scrollOffset = () => 0,
     onopen,
   }: {
     entry: Entry;
     open?: boolean;
     scroll?: boolean;
+    scrollOffset?: () => number;
     onopen?: () => void;
   } = $props();
 
@@ -36,9 +38,12 @@
       if (fired) return;
       fired = true;
       const rect = el.getBoundingClientRect();
-      const threshold = parseFloat(getComputedStyle(el).paddingTop);
-      if (rect.top < -threshold || rect.bottom > window.innerHeight + threshold) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const padding = parseFloat(getComputedStyle(el).paddingTop);
+      const offset = scrollOffset();
+      const effectiveTop = rect.top - offset;
+      if (effectiveTop < -padding || rect.bottom > window.innerHeight + padding) {
+        const target = window.scrollY + rect.top - offset - padding;
+        window.scrollTo({ top: target, behavior: 'smooth' });
       }
     }
 

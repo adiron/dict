@@ -6,6 +6,44 @@
 
   let openId = $state<number | null>(null);
   let inputEl: HTMLInputElement;
+  let searchBarEl: HTMLFormElement;
+
+  const OVERSHOOT = 10; // extra px past -height to ensure no peeking
+
+  let searchOffset = 0;  // shared between scroll handler and snap
+  let snapping = false;
+
+  $effect(() => {
+    let lastY = window.scrollY;
+
+    function onScroll() {
+      const y = window.scrollY;
+      const delta = y - lastY;
+      lastY = y; // always keep lastY current, even while snapping
+      if (snapping) return;
+      const min = -(searchBarEl?.offsetHeight ?? 0) - OVERSHOOT;
+      searchOffset = delta > 0
+        ? Math.max(searchOffset - delta, min)
+        : Math.min(searchOffset - delta, 0);
+
+      if (searchBarEl) searchBarEl.style.transform = `translateY(${searchOffset}px)`;
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  });
+
+  function snapSearchIntoView() {
+    if (!searchBarEl || searchOffset === 0) return;
+    snapping = true;
+    searchBarEl.style.transition = 'transform 0.25s ease';
+    searchBarEl.style.transform = 'translateY(0)';
+    searchBarEl.addEventListener('transitionend', () => {
+      searchOffset = 0;
+      snapping = false;
+      if (searchBarEl) searchBarEl.style.transition = '';
+    }, { once: true });
+  }
 
   $effect(() => {
     // Reset to first entry whenever results change
@@ -20,7 +58,7 @@
 </script>
 
 <main>
-  <form class="search-bar" method="GET" action="/">
+  <form class="search-bar" bind:this={searchBarEl} method="GET" action="/" onfocusin={snapSearchIntoView}>
     <input
       class="search-input"
       type="search"
@@ -41,7 +79,18 @@
     {#if data.results.entries.length > 0 || data.results.phrases.length > 0}
       <div class="results">
         {#each data.results.entries as entry, i (entry.id)}
-          <Entry {entry} open={openId === entry.id} scroll={i !== 0} onopen={() => { openId = entry.id; }} />
+          <Entry
+            {entry}
+            open={openId === entry.id}
+            scroll={i !== 0}
+            scrollOffset={() => {
+              if (!searchBarEl) return 0;
+              const transform = new DOMMatrix(getComputedStyle(searchBarEl).transform);
+              const visibleHeight = searchBarEl.offsetHeight + transform.m42; // m42 = translateY
+              return Math.max(visibleHeight, 0);
+            }}
+            onopen={() => { openId = entry.id; }}
+          />
         {/each}
 
         {#if data.results.phrases.length > 0}
@@ -66,6 +115,10 @@
 
 <style lang="scss">
   .search-bar {
+    position: sticky;
+    top: var(--padding);
+    z-index: 10;
+    will-change: transform;
     display: flex;
     align-items: center;
     gap: 1rem;
