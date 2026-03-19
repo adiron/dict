@@ -102,25 +102,3 @@ export function search(q: string, limit: number): SearchResponse {
   return { entries, phrases };
 }
 
-export function getEntry(id: number): Entry | null {
-  const row = db
-    .prepare(
-      `SELECT id, headword, homonym_num, pos, article, gender, body_html
-       FROM entries WHERE id = ?`,
-    )
-    .get(id) as Omit<Entry, 'inflections' | 'phrases' | 'matched_inflection'> | undefined;
-
-  if (!row) return null;
-
-  const inflections = (
-    db
-      .prepare(`SELECT value FROM inflections WHERE entry_id = ? ORDER BY id`)
-      .all(id) as { value: string }[]
-  ).map((r) => r.value);
-
-  const phrases = db
-    .prepare(`SELECT id, dutch, translation, body_html FROM phrases WHERE entry_id = ?`)
-    .all(id) as Entry['phrases'];
-
-  return { ...row, matched_inflection: null, inflections, phrases };
-}

@@ -57,6 +57,10 @@
   });
 </script>
 
+<svelte:head>
+  <title>{data.q ? `${data.q} - Dict` : 'Dict'}</title>
+</svelte:head>
+
 <main>
   <form class="search-bar" bind:this={searchBarEl} method="GET" action="/" onfocusin={snapSearchIntoView}>
     <input
@@ -100,7 +104,7 @@
               {#each data.results.phrases as phrase (phrase.id)}
                 <li>
                   <strong>{phrase.dutch}</strong> - {phrase.translation}
-                  <a class="ref" href="/entry/{phrase.entry_id}">({phrase.headword})</a>
+                  <a class="ref" href="/?q={encodeURIComponent(phrase.headword)}">({phrase.headword})</a>
                 </li>
               {/each}
             </ul>
@@ -126,7 +130,6 @@
     border-radius: 4px;
     background: var(--bg);
     padding: 8px 1rem;
-    margin-bottom: 0;
   }
 
   .search-input {

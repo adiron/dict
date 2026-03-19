@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getEntry, search } from './queries.js';
+import { search } from './queries.js';
 
 describe('search', () => {
   it('returns entries and phrases arrays', () => {
@@ -91,48 +91,3 @@ describe('search', () => {
   });
 });
 
-describe('getEntry', () => {
-  it('returns a full entry for a valid id', () => {
-    const entry = getEntry(1);
-    expect(entry).not.toBeNull();
-    expect(entry!).toHaveProperty('id', 1);
-    expect(entry!).toHaveProperty('headword');
-    expect(entry!).toHaveProperty('body_html');
-    expect(entry!).toHaveProperty('inflections');
-    expect(entry!).toHaveProperty('phrases');
-  });
-
-  it('inflections is a string array', () => {
-    const entry = getEntry(1);
-    expect(Array.isArray(entry!.inflections)).toBe(true);
-    if (entry!.inflections.length > 0) {
-      expect(typeof entry!.inflections[0]).toBe('string');
-    }
-  });
-
-  it('phrases is an array', () => {
-    const entry = getEntry(1);
-    expect(Array.isArray(entry!.phrases)).toBe(true);
-  });
-
-  it('entry with known phrases includes them', () => {
-    const { entries } = search('staan', 20);
-    const staan = entries.find((e) => e.headword === 'staan');
-    expect(staan).toBeDefined();
-
-    const entry = getEntry(staan!.id);
-    expect(entry!.phrases.length).toBeGreaterThan(0);
-    expect(entry!.phrases[0]).toHaveProperty('dutch');
-    expect(entry!.phrases[0]).toHaveProperty('translation');
-    expect(entry!.phrases[0]).toHaveProperty('body_html');
-  });
-
-  it('returns null for unknown id', () => {
-    expect(getEntry(99999999)).toBeNull();
-  });
-
-  it('matched_inflection is null for direct lookups', () => {
-    const entry = getEntry(1);
-    expect(entry!.matched_inflection).toBeNull();
-  });
-});

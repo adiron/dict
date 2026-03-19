@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Extract van-dale.mobi -> data/van-dale.sqlite
+Extract a dictionary .mobi file into data/dictionary.sqlite
 
 Schema:
   entries  - one row per <idx:entry> (headword + definition)
   phrases  - one row per ◦ fixed expression, linked to parent entry
 
-Run: python3 scripts/extract.py
+Run: python3 scripts/extract.py path/to/dictionary.mobi
 """
 
-import json
 import re
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
 
 import mobi
@@ -21,8 +19,7 @@ from bs4 import BeautifulSoup, Tag
 from loguru import logger
 
 ROOT = Path(__file__).parent.parent
-MOBI_FILE = ROOT / "sources" / "van-dale.mobi"
-DB_FILE = ROOT / "data" / "van-dale.sqlite"
+DB_FILE = ROOT / "data" / "dictionary.sqlite"
 
 # The finite set of true part-of-speech values in this dictionary.
 # Everything else in that position (domain labels, register labels) is
@@ -365,11 +362,16 @@ def build_db(book_html: Path, db_path: Path) -> None:
 
 
 def main():
-    if not MOBI_FILE.exists():
-        logger.error("MOBI file not found: {}", MOBI_FILE)
+    if len(sys.argv) < 2:
+        logger.error("Usage: python3 scripts/extract.py path/to/dictionary.mobi")
         sys.exit(1)
 
-    book_html = extract_book_html(MOBI_FILE)
+    mobi_file = Path(sys.argv[1])
+    if not mobi_file.exists():
+        logger.error("MOBI file not found: {}", mobi_file)
+        sys.exit(1)
+
+    book_html = extract_book_html(mobi_file)
     build_db(book_html, DB_FILE)
 
 
