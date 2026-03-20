@@ -3,7 +3,8 @@
 # Requires data/dictionary.sqlite to exist before building.
 # Run the extractor first: python3 scripts/extract.py path/to/dictionary.mobi
 
-# ── Stage 1: production dependencies (native addons compiled here) ────────────
+# ── Stage 1: production dependencies ─────────────────────────────────────────
+# Runs on the TARGET so native addons (better-sqlite3) compile for the right arch.
 FROM node:22-alpine AS deps
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
@@ -11,7 +12,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+# Runs on the BUILD HOST so Rolldown (Vite 8's native bundler) can execute.
+# The output is plain JS - no architecture dependency.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package*.json ./
