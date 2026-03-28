@@ -243,8 +243,7 @@ def parse_entry(entry_el: etree._Element, keep_html: bool = False) -> dict | Non
         return None
     body_div = top_divs[-1]
 
-    article_div_html = _tohtml(top_divs[1]) if len(top_divs) > 1 else ""
-    m = _ARTICLE_RE.search(article_div_html)
+    m = _ARTICLE_RE.search(_tohtml(top_divs[0]))
     article = m.group(1) if m else None
     gender = (m.group(2) or None) if m else None
 
