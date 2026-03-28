@@ -40,12 +40,15 @@ function hydrateEntries(ranked: RankedResult[]): Entry[] {
 
   const rowById = new Map(rows.map((r) => [r.id, r]));
 
-  return ranked.map(({ id, matched_inflection }) => ({
-    ...rowById.get(id)!,
-    matched_inflection,
-    inflections: inflectionsByEntry.get(id) ?? [],
-    phrases: phrasesByEntry.get(id) ?? [],
-  }));
+  return ranked.map(({ id, matched_inflection }) => {
+    const row = rowById.get(id)!;
+    return {
+      ...row,
+      matched_inflection,
+      inflections: inflectionsByEntry.get(id) ?? [],
+      phrases: phrasesByEntry.get(id) ?? [],
+    };
+  });
 }
 
 export function search(q: string, limit: number): SearchResponse {

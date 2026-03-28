@@ -46,8 +46,8 @@
   }
 
   $effect(() => {
-    // Reset to first entry whenever results change
-    openId = data.results?.entries[0]?.id ?? null;
+    // On navigation, open the linked entry if specified, else default to first
+    openId = data.openId ?? data.results?.entries[0]?.id ?? null;
   });
 
   $effect(() => {

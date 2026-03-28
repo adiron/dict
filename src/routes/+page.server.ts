@@ -3,6 +3,8 @@ import { search } from '$lib/server/queries.js';
 
 export const load: PageServerLoad = ({ url }) => {
   const q = url.searchParams.get('q')?.trim() ?? '';
-  if (!q) return { q, results: null };
-  return { q, results: search(q, 20) };
+  const openParam = url.searchParams.get('open');
+  const openId = openParam ? parseInt(openParam, 10) : null;
+  if (!q) return { q, results: null, openId: null };
+  return { q, results: search(q, 20), openId };
 };

@@ -14,9 +14,10 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import mobi
-from bs4 import BeautifulSoup, Tag
+from lxml import etree
 from loguru import logger
 from tqdm import tqdm
 
@@ -57,6 +58,7 @@ TRUE_POS = {
 DDL = """
 CREATE TABLE entries (
     id          INTEGER PRIMARY KEY,
+    filepos     INTEGER,
     headword    TEXT    NOT NULL,
     homonym_num INTEGER,
     pos         TEXT,
@@ -96,6 +98,8 @@ CREATE VIRTUAL TABLE phrases_fts USING fts5(
 );
 """
 
+_ARTICLE_RE = re.compile(r"<span>(de|het)(?:<sup><i>([mv])</i></sup>)?</span>")
+
 
 def extract_book_html(mobi_path: Path) -> Path:
     logger.info("Extracting MOBI...")
@@ -108,187 +112,157 @@ def extract_book_html(mobi_path: Path) -> Path:
     return book
 
 
-def read_book_html(book_html: Path) -> str:
-    logger.info("Reading book.html ({:.1f} MB)...", book_html.stat().st_size / 1e6)
-    return book_html.read_text(encoding="utf-8", errors="replace")
+def parse_book_html(book_html: Path) -> etree._Element:
+    logger.info("Parsing book.html ({:.1f} MB)...", book_html.stat().st_size / 1e6)
+    data = book_html.read_bytes()
+    parser = etree.HTMLParser(encoding="utf-8")
+    return etree.fromstring(data, parser)
 
 
-def iter_raw_entries(text: str):
-    """Yield regex matches for each <idx:entry> block."""
-    pattern = re.compile(r"<idx:entry[^>]*>.*?</idx:entry>", re.DOTALL)
-    yield from pattern.finditer(text)
+def _text(el: etree._Element) -> str:
+    """All text content of an element, stripped."""
+    return "".join(el.itertext()).strip()
 
 
-def parse_homonym_num(b_tag: Tag | None) -> int | None:
-    """Return the superscript homonym number from <b>word<sup>N</sup></b>, or None."""
-    if b_tag is None:
-        return None
-    sup = b_tag.find("sup")
-    if sup:
-        txt = sup.get_text(strip=True)
-        if txt.isdigit():
-            return int(txt)
-    return None
+def _tohtml(el: etree._Element) -> str:
+    return etree.tostring(el, encoding="unicode", method="html")
 
 
-def parse_article_gender(raw: str) -> tuple[str | None, str | None]:
-    """
-    Return (article, gender) from the span pattern:
-      <span>de/het<sup><i>m/v</i></sup></span>
-    Gender is m, v, or None.
-    """
-    m = re.search(r"<span>(de|het)(?:<sup><i>([mv])</i></sup>)?</span>", raw)
-    if m:
-        return m.group(1), m.group(2) or None
-    return None, None
+def _is_leaf_phrase_div(div: etree._Element) -> bool:
+    """True if this div directly contains a ◦ phrase (not a container of phrase divs)."""
+    text = _text(div)
+    if not text.startswith("◦"):
+        return False
+    for child in div:
+        if child.tag == "div" and _text(child).startswith("◦"):
+            return False
+    return True
 
 
-def parse_pos(soup: BeautifulSoup) -> str | None:
-    """
-    Find the first <i> tag whose text is a known POS value.
-    The POS appears in the definition section before any sense numbers.
-    """
-    for i_tag in soup.find_all("i"):
-        txt = i_tag.get_text(strip=True)
-        if txt in TRUE_POS:
-            return txt
-    return None
+def _parse_phrases(body_div: etree._Element) -> list[dict]:
+    results = []
+    seen: set[str] = set()
+
+    for div in body_div.iter("div"):
+        if not _is_leaf_phrase_div(div):
+            continue
+        raw_html = _tohtml(div)
+        if raw_html in seen:
+            continue
+        seen.add(raw_html)
+
+        full_text = " ".join(_text(div).split())
+        full_text = re.sub(r"^◦\s*", "", full_text)
+
+        if "|" in full_text:
+            dutch_part, _, translation_part = full_text.partition("|")
+        else:
+            dutch_part, translation_part = full_text, ""
+
+        dutch = dutch_part.strip()
+        translation = translation_part.strip()
+        if dutch:
+            results.append({"dutch": dutch, "translation": translation, "body_html": raw_html})
+
+    return results
 
 
-def parse_inflections(soup: BeautifulSoup) -> list[str]:
-    return [tag["value"] for tag in soup.find_all("idx:iform") if tag.get("value")]
+def _strip_phrases(body_div: etree._Element) -> None:
+    for div in list(body_div.iter("div")):
+        if _is_leaf_phrase_div(div):
+            parent = div.getparent()
+            if parent is not None:
+                parent.remove(div)
+                if parent is not body_div and not _text(parent):
+                    gp = parent.getparent()
+                    if gp is not None:
+                        gp.remove(parent)
 
 
-def strip_pos_label(soup: BeautifulSoup, pos: str | None) -> None:
-    """Remove the POS <i> tag and any ancestors that become empty."""
+def _strip_pos_label(body_div: etree._Element, pos: str | None) -> None:
     if not pos:
         return
-    for i_tag in soup.find_all("i"):
-        if i_tag.get_text(strip=True) == pos:
-            node: Tag = i_tag
+    for i in body_div.iter("i"):
+        if _text(i) == pos:
+            node = i
             while True:
-                parent = node.parent
-                node.decompose()
-                if not (parent and isinstance(parent, Tag) and not parent.get_text(strip=True)):
+                parent = node.getparent()
+                if parent is None:
+                    break
+                parent.remove(node)
+                if parent is body_div or _text(parent):
                     break
                 node = parent
             return
 
 
-def strip_presentation_attrs(soup: BeautifulSoup) -> None:
-    """Remove presentational HTML attributes (align, etc.) from all tags."""
-    for tag in soup.find_all(True):
-        tag.attrs.pop("align", None)
+def _strip_presentation_attrs(body_div: etree._Element) -> None:
+    for el in body_div.iter():
+        el.attrib.pop("align", None)
 
 
-def parse_body_html(soup: BeautifulSoup) -> str:
-    """
-    Return the inner HTML of the definition section - the last top-level <div>
-    inside <idx:entry>. Strips idx: namespace tags.
-    """
-    entry = soup.find("idx:entry")
-    if not entry:
-        return ""
-    # Top-level divs inside the entry: [headword div, article div, definition div]
-    top_divs = [c for c in entry.children if isinstance(c, Tag) and c.name == "div"]
-    if not top_divs:
-        return ""
-    # The definition is the last top-level div
-    return str(top_divs[-1])
-
-
-def is_leaf_phrase_div(div: Tag) -> bool:
-    """
-    True if this div directly contains a ◦ phrase (not a container of phrase divs).
-    """
-    text = div.get_text(strip=True)
-    if not text.startswith("◦"):
-        return False
-    # Must not contain child divs that are themselves phrase divs
-    for child in div.children:
-        if isinstance(child, Tag) and child.name == "div":
-            child_text = child.get_text(strip=True)
-            if child_text.startswith("◦"):
-                return False
-    return True
-
-
-def parse_phrases(soup: BeautifulSoup) -> list[dict]:
-    """
-    Return list of {dutch, translation, body_html} for each ◦ fixed expression.
-    """
-    results = []
-    seen = set()
-
-    for div in soup.find_all("div"):
-        if not is_leaf_phrase_div(div):
+def iter_entries(root: etree._Element):
+    """Yield (filepos, entry_element) for each idx:entry in the lxml tree."""
+    for el in root.iter():
+        if el.tag != "idx:entry":
             continue
-
-        raw_html = str(div)
-        if raw_html in seen:
-            continue
-        seen.add(raw_html)
-
-        full_text = div.get_text(" ", strip=True)
-        # Strip leading ◦ bullet
-        full_text = re.sub(r"^◦\s*", "", full_text)
-
-        # Split on | separator
-        if "|" in full_text:
-            dutch_part, _, translation_part = full_text.partition("|")
-        else:
-            dutch_part = full_text
-            translation_part = ""
-
-        dutch = dutch_part.strip()
-        translation = translation_part.strip()
-
-        if dutch:
-            results.append(
-                {
-                    "dutch": dutch,
-                    "translation": translation,
-                    "body_html": raw_html,
-                }
-            )
-
-    return results
+        anchor = next(
+            (c for c in el.iter() if c.tag == "a" and (c.get("id") or "").startswith("filepos")),
+            None,
+        )
+        filepos = int(anchor.get("id")[7:]) if anchor is not None else None
+        yield filepos, el
 
 
-def strip_phrases(soup: BeautifulSoup) -> None:
-    """
-    Remove all phrase divs (and any parent divs that become empty after removal)
-    from the soup in-place, so parse_body_html doesn't include them.
-    """
-    for div in soup.find_all("div"):
-        if is_leaf_phrase_div(div):
-            parent = div.parent
-            div.decompose()
-            # Remove parent container if it's now empty
-            if parent and isinstance(parent, Tag) and not parent.get_text(strip=True):
-                parent.decompose()
-
-
-def parse_entry(raw_html: str, keep_html: bool = False) -> dict | None:
-    soup = BeautifulSoup(raw_html, "lxml")
-
-    orth = soup.find("idx:orth")
-    if not orth:
+def parse_entry(entry_el: etree._Element, keep_html: bool = False) -> dict | None:
+    orth = next((c for c in entry_el if c.tag == "idx:orth"), None)
+    if orth is None:
         return None
-    headword = orth.get("value", "").strip()
+    headword = (orth.get("value") or "").strip()
     if not headword:
         return None
 
-    inflections = parse_inflections(soup)
-    homonym_num = parse_homonym_num(soup.find("b"))
-    article, gender = parse_article_gender(raw_html)
-    pos = parse_pos(soup)
-    phrases = parse_phrases(soup)
-    strip_phrases(soup)
+    inflections = [
+        el.get("value")
+        for el in entry_el.iter()
+        if el.tag == "idx:iform" and el.get("value")
+    ]
+
+    homonym_num = None
+    b = next((el for el in entry_el.iter("b")), None)
+    if b is not None:
+        sup = b.find("sup")
+        if sup is not None:
+            txt = (sup.text or "").strip()
+            if txt.isdigit():
+                homonym_num = int(txt)
+
+    # Article/gender: regex on the second top-level div's HTML
+    top_divs = [c for c in entry_el if c.tag == "div"]
+    if not top_divs:
+        return None
+    body_div = top_divs[-1]
+
+    article_div_html = _tohtml(top_divs[1]) if len(top_divs) > 1 else ""
+    m = _ARTICLE_RE.search(article_div_html)
+    article = m.group(1) if m else None
+    gender = (m.group(2) or None) if m else None
+
+    pos = None
+    for i in body_div.iter("i"):
+        txt = _text(i)
+        if txt in TRUE_POS:
+            pos = txt
+            break
+
+    phrases = _parse_phrases(body_div)
+    _strip_phrases(body_div)
+
     if not keep_html:
-        strip_pos_label(soup, pos)
-        strip_presentation_attrs(soup)
-    body_html = parse_body_html(soup)
+        _strip_pos_label(body_div, pos)
+        _strip_presentation_attrs(body_div)
+
+    body_html = _tohtml(body_div)
 
     return {
         "headword": headword,
@@ -302,14 +276,43 @@ def parse_entry(raw_html: str, keep_html: bool = False) -> dict | None:
     }
 
 
+def resolve_links(con: sqlite3.Connection) -> None:
+    """
+    Replace href="#fileposN" links with /?q=headword&open=id using the
+    filepos->entry mapping recorded during extraction.
+    """
+    rows = con.execute("SELECT id, headword, filepos FROM entries WHERE filepos IS NOT NULL").fetchall()
+    filepos_map = {filepos: (eid, headword) for eid, headword, filepos in rows}
+
+    link_rows = con.execute(
+        "SELECT id, body_html FROM entries WHERE body_html LIKE '%href=\"#filepos%'"
+    ).fetchall()
+
+    updated = 0
+    for entry_id, body_html in link_rows:
+        def replace(m, _map=filepos_map):
+            fp = int(m.group(1))
+            if fp not in _map:
+                return m.group(0)
+            eid, headword = _map[fp]
+            return f'href="/?q={quote(headword)}&open={eid}"'
+
+        new_html = re.sub(r'href="#filepos(\d+)"', replace, body_html)
+        if new_html != body_html:
+            con.execute("UPDATE entries SET body_html = ? WHERE id = ?", (new_html, entry_id))
+            updated += 1
+
+    logger.info("Resolved links in {} entries", updated)
+
+
 def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists():
         db_path.unlink()
 
-    text = read_book_html(book_html)
-    entry_count = text.count("<idx:entry")
-    logger.info("Found ~{} entries", entry_count)
+    root = parse_book_html(book_html)
+    entry_count = sum(1 for el in root.iter() if el.tag == "idx:entry")
+    logger.info("Found {} entries", entry_count)
 
     con = sqlite3.connect(db_path)
     con.executescript(DDL)
@@ -318,9 +321,7 @@ def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
     phrase_total = 0
     inflection_total = 0
 
-    # Commit every BATCH entries to keep memory in check while still being fast
     BATCH = 2000
-
     pending_entries = []
     pending_inflections = []
     pending_phrases = []
@@ -334,9 +335,9 @@ def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
             cur = con.execute(
                 """
                 INSERT INTO entries
-                    (headword, homonym_num, pos, article, gender, body_html)
+                    (filepos, headword, homonym_num, pos, article, gender, body_html)
                 VALUES
-                    (:headword, :homonym_num, :pos, :article, :gender, :body_html)
+                    (:filepos, :headword, :homonym_num, :pos, :article, :gender, :body_html)
                 """,
                 entry,
             )
@@ -363,10 +364,11 @@ def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
         if total % 10000 == 0:
             logger.info("Inserted {} entries, {} inflections, {} phrases...", total, inflection_total, phrase_total)
 
-    for match in tqdm(iter_raw_entries(text), total=entry_count, unit="entries", desc="Parsing"):
-        entry = parse_entry(match.group(), keep_html=keep_html)
+    for filepos, entry_el in tqdm(iter_entries(root), total=entry_count, unit="entries", desc="Parsing"):
+        entry = parse_entry(entry_el, keep_html=keep_html)
         if entry is None:
             continue
+        entry["filepos"] = filepos
 
         phrases = entry.pop("phrases")
         inflections = entry.pop("inflections")
@@ -382,6 +384,10 @@ def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
     logger.info("Building FTS indexes...")
     con.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
     con.execute("INSERT INTO phrases_fts(phrases_fts) VALUES('rebuild')")
+    con.commit()
+
+    logger.info("Resolving internal links...")
+    resolve_links(con)
     con.commit()
     con.close()
 
