@@ -41,3 +41,4 @@ sources/
 *.sw?
 build/
 .vscode
+data/.reload
