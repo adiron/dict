@@ -390,6 +390,9 @@ def build_db(book_html: Path, db_path: Path, keep_html: bool = False) -> None:
     con.commit()
     con.close()
 
+    # Touch sentinel so the dev server knows the DB is fully ready
+    (db_path.parent / ".reload").touch()
+
     logger.info(
         "Done. {} entries, {} inflections, {} phrases -> {}",
         total,
