@@ -45,7 +45,7 @@ docker build -t dict .
 docker run -p 3000:3000 dict
 ```
 
-### Cross-building for Raspberry Pi (ARMv7) on Apple Silicon
+### Cross-building for Raspberry Pi (aarch64) on Apple Silicon
 
 The build stage runs on the host so Vite's native bundler (Rolldown) can execute. Only the runtime deps compile under emulation, which is fast on arm64.
 
@@ -58,13 +58,13 @@ docker run -d -p 5000:5000 registry:2
 Build and push:
 
 ```bash
-docker build --platform linux/arm/v7 -t localhost:5000/dict:armv7 .
-docker push localhost:5000/dict:armv7
+docker build --platform linux/arm64 -t localhost:5000/dict:aarch64 .
+docker push localhost:5000/dict:aarch64
 ```
 
 Pull and run on the Pi (add `<mac-hostname>:5000` to `insecure-registries` in `/etc/docker/daemon.json` first):
 
 ```bash
-docker pull <mac-hostname>:5000/dict:armv7
-docker run -p 3000:3000 <mac-hostname>:5000/dict:armv7
+docker pull <mac-hostname>:5000/dict:aarch64
+docker run -p 3000:3000 <mac-hostname>:5000/dict:aarch64
 ```
